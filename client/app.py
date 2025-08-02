@@ -10,7 +10,7 @@ class CollaborativeWhiteboard:
         self.root = tk.Tk()
         self.root.title("Collaborative Whiteboard")
 
-        self.canvas = tk.Canvas(self.root, width=800, height=600, bg="white")
+        self.canvas = tk.Canvas(self.root, width=800, height=800, bg="white")
         self.canvas.pack()
 
         # Buttons and sliders
