@@ -1,10 +1,10 @@
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
-import uvicorn
+import json
+from collections import defaultdict
 
 app = FastAPI()
 
-# Allow all CORS origins for development
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -12,18 +12,47 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-connected_clients = []
+rooms = defaultdict(lambda: {"clients": [], "actions": []})
 
-@app.websocket("/ws")
-async def websocket_endpoint(websocket: WebSocket):
+
+@app.websocket("/ws/{room_id}")
+async def websocket_endpoint(websocket: WebSocket, room_id: str):
     await websocket.accept()
-    connected_clients.append(websocket)
+    room = rooms[room_id]
+    room["clients"].append(websocket)
+
+    # Send full state on join
+    await websocket.send_text(json.dumps({
+        "type": "reset",
+        "payload": {"actions": room["actions"]}
+    }))
 
     try:
         while True:
-            data = await websocket.receive_text()
-            for client in connected_clients:
-                if client != websocket:
-                    await client.send_text(data)
+            raw = await websocket.receive_text()
+            message = json.loads(raw)
+            msg_type = message["type"]
+
+            if msg_type in {"draw", "end_stroke"}:
+                room["actions"].append(message)
+
+                for client in room["clients"]:
+                    if client != websocket:
+                        await client.send_text(json.dumps(message))
+
+            elif msg_type == "undo":
+                while room["actions"]:
+                    last = room["actions"].pop()
+                    if last["type"] == "end_stroke":
+                        break
+
+                reset_msg = {
+                    "type": "reset",
+                    "payload": {"actions": room["actions"]}
+                }
+
+                for client in room["clients"]:
+                    await client.send_text(json.dumps(reset_msg))
+
     except WebSocketDisconnect:
-        connected_clients.remove(websocket)
+        room["clients"].remove(websocket)
